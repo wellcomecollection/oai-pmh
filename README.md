@@ -16,6 +16,24 @@ uv pip install .
 
 Full documentation is available at [https://kenoir.github.io/oai-pmh/](https://kenoir.github.io/oai-pmh/).
 
+### Updating the documentation
+
+The static HTML docs under `docs/pdoc/` are generated with [pdoc](https://pdoc.dev/). To refresh them after making code changes:
+
+1. Install the project (and dev extras if desired):
+
+    ```bash
+    uv pip install -e ".[dev]"
+    ```
+
+2. Regenerate the documentation:
+
+    ```bash
+    uv run python -m pdoc oai_pmh_client --output-dir docs/pdoc --docformat google
+    ```
+
+This overwrites the HTML (and supporting assets) inside `docs/pdoc/`. Commit the updated files if you want the published site to reflect the latest API.
+
 ## Usage
 
 Here is a simple example of how to use the client:
