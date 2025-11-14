@@ -65,15 +65,17 @@ Different OAI-PMH repositories declare (via the `Identify` response) which dates
 * `YYYY-MM-DD` (day-level)
 * `YYYY-MM-DDThh:mm:ssZ` (second-level, UTC)
 
-Some repositories (e.g. arXiv) reject second-level timestamps for selective harvesting requests. By default the client now formats `datetime` values using day-level granularity to maximize compatibility. To opt into second-level precision, pass the `datestamp_granularity` argument when instantiating the client:
+The client automatically chooses the right format based on the `datetime` you provide: midnight values are sent with day-level precision, and any timestamp with a time component uses second-level precision. This makes it easy to harvest narrow windows (e.g. a few seconds) without additional configuration.
+
+If you need to override the automatic behaviour—for example to force day-level timestamps for repositories that reject second-level granularity—you can set the `datestamp_granularity` argument when instantiating the client:
 
 ```python
-client = OAIClient("https://oaipmh.arxiv.org/oai", datestamp_granularity="YYYY-MM-DDThh:mm:ssZ")
+client = OAIClient("https://oaipmh.arxiv.org/oai", datestamp_granularity="YYYY-MM-DD")
 
 from datetime import datetime
 records = client.list_records(
     metadata_prefix="oai_dc",
-    from_date=datetime(2024, 1, 1, 12, 0, 0),
+    from_date=datetime(2024, 1, 1, 12, 0, 0),  # still sent as 2024-01-01
 )
 ```
 

@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<OAI-PMH xmlns="http://www.openarchives.org/OAI/2.0/"
+           xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+           xsi:schemaLocation="http://www.openarchives.org/OAI/2.0/
+                               http://www.openarchives.org/OAI/2.0/OAI-PMH.xsd">
+    <responseDate>2024-01-01T12:00:00Z</responseDate>
+    <request verb="GetRecord" identifier="oai:example.org:3" metadataPrefix="oai_dc">http://example.com/oai</request>
+    <GetRecord>
+        <record>
+            <metadata>
+                <oai_dc:dc xmlns:oai_dc="http://www.openarchives.org/OAI/2.0/oai_dc/"
+                           xmlns:dc="http://purl.org/dc/elements/1.1/"
+                           xsi:schemaLocation="http://www.openarchives.org/OAI/2.0/oai_dc/ http://www.openarchives.org/OAI/2.0/oai_dc.xsd">
+                    <dc:title>Test Record Without Header</dc:title>
+                </oai_dc:dc>
+            </metadata>
+        </record>
+    </GetRecord>
+</OAI-PMH>

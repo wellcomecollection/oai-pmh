@@ -88,6 +88,7 @@ def test_get_record(client: OAIClient):
     identifier = "oai:arXiv.org:cs/0012001"
     record = client.get_record(identifier, "oai_dc")
     assert isinstance(record, Record)
+    assert record.header is not None
     assert record.header.identifier == identifier
     assert not record.header.is_deleted
     assert record.metadata is not None
@@ -128,15 +129,42 @@ def test_oai_error(mock_client_get: OAIClient, httpx_mock: HTTPXMock):
     with pytest.raises(BadArgumentError):
         list(mock_client_get.list_records(metadata_prefix="invalid"))
 
-def test_list_records_with_datetime_day_granularity(mock_client_get: OAIClient, httpx_mock: HTTPXMock):
-    """Tests day-level granularity (default)."""
+def test_list_records_auto_granularity_with_time(mock_client_get: OAIClient, httpx_mock: HTTPXMock):
+    """Default auto granularity preserves second-level precision when time is present."""
+    httpx_mock.add_response(
+        method="GET",
+        url=f"{BASE_URL}?verb=ListRecords&metadataPrefix=oai_dc&from=2024-01-01T12%3A00%3A00Z",
+        content=load_test_data("list_records_final.xml"),
+    )
+    from_date = datetime(2024, 1, 1, 12, 0, 0)
+    records = list(mock_client_get.list_records(metadata_prefix="oai_dc", from_date=from_date))
+    assert len(records) == 1
+    assert isinstance(records[0], Record)
+
+
+def test_list_records_auto_granularity_midnight(mock_client_get: OAIClient, httpx_mock: HTTPXMock):
+    """Auto granularity falls back to day-level formatting for midnight datetimes."""
+    httpx_mock.add_response(
+        method="GET",
+        url=f"{BASE_URL}?verb=ListRecords&metadataPrefix=oai_dc&from=2024-01-01",
+        content=load_test_data("list_records_final.xml"),
+    )
+    from_date = datetime(2024, 1, 1, 0, 0, 0)
+    records = list(mock_client_get.list_records(metadata_prefix="oai_dc", from_date=from_date))
+    assert len(records) == 1
+    assert isinstance(records[0], Record)
+
+
+def test_list_records_force_day_granularity(httpx_mock: HTTPXMock):
+    """Explicitly forcing day-level granularity maintains prior behaviour."""
+    client = OAIClient(BASE_URL, datestamp_granularity="YYYY-MM-DD")
     httpx_mock.add_response(
         method="GET",
         url=f"{BASE_URL}?verb=ListRecords&metadataPrefix=oai_dc&from=2024-01-01",
         content=load_test_data("list_records_final.xml"),
     )
     from_date = datetime(2024, 1, 1, 12, 0, 0)
-    records = list(mock_client_get.list_records(metadata_prefix="oai_dc", from_date=from_date))
+    records = list(client.list_records(metadata_prefix="oai_dc", from_date=from_date))
     assert len(records) == 1
     assert isinstance(records[0], Record)
 
@@ -170,7 +198,9 @@ def test_list_records_with_resumption(mock_client_get: OAIClient, httpx_mock: HT
     )
     records = list(mock_client_get.list_records(metadata_prefix="oai_dc"))
     assert len(records) == 2
+    assert records[0].header is not None
     assert records[0].header.identifier == "oai:example.org:1"
+    assert records[1].header is not None
     assert records[1].header.identifier == "oai:example.org:2"
 
 def test_list_records_with_resumption_post(mock_client_post: OAIClient, httpx_mock: HTTPXMock):
@@ -191,5 +221,29 @@ def test_list_records_with_resumption_post(mock_client_post: OAIClient, httpx_mo
     )
     records = list(mock_client_post.list_records(metadata_prefix="oai_dc"))
     assert len(records) == 2
+    assert records[0].header is not None
     assert records[0].header.identifier == "oai:example.org:1"
+    assert records[1].header is not None
     assert records[1].header.identifier == "oai:example.org:2"
+
+def test_record_without_header(mock_client_get: OAIClient, httpx_mock: HTTPXMock):
+    """
+    Tests that the client correctly handles records without headers.
+    """
+    from lxml import etree
+    from oai_pmh_client.models import Record
+    
+    # Load and parse the test XML
+    xml_content = load_test_data("record_no_header.xml")
+    root = etree.fromstring(xml_content)
+    
+    # Find the record element
+    ns = {"oai": "http://www.openarchives.org/OAI/2.0/"}
+    record_element = root.find(".//oai:record", namespaces=ns)
+    
+    # Parse the record
+    record = Record.from_xml(record_element)
+    
+    assert isinstance(record, Record)
+    assert record.header is None
+    assert record.metadata is not None

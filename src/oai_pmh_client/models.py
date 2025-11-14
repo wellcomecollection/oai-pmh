@@ -140,7 +140,7 @@ class Record(BaseModel):
     """
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
-    header: Header = Field(..., description="The record header.")
+    header: Optional[Header] = Field(None, description="The record header.")
     metadata: Optional[etree._Element] = Field(
         None, description="The metadata of the record as an XML element."
     )
@@ -156,11 +156,9 @@ class Record(BaseModel):
     def from_xml(cls, element: etree._Element) -> Self:
         """Parses a Record from an XML element."""
         header_element = _find(element, "oai:header")
-        if header_element is None:
-            raise ValueError("Record element must contain a header.")
 
         return cls(
-            header=Header.from_xml(header_element),
+            header=Header.from_xml(header_element) if header_element is not None else None,
             metadata=_find(element, "oai:metadata"),
         )
 

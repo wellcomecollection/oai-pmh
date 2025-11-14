@@ -1,5 +1,5 @@
 from datetime import datetime, timezone
-from typing import Union, Iterator
+from typing import Union, Iterator, Literal
 
 import httpx
 from lxml import etree
@@ -37,6 +37,8 @@ OAI_ERROR_MAP = {
 }
 
 Datestamp = Union[datetime, str]
+DatestampGranularity = Literal["auto", "YYYY-MM-DD", "YYYY-MM-DDThh:mm:ssZ"]
+VALID_GRANULARITIES: set[str] = {"auto", "YYYY-MM-DD", "YYYY-MM-DDThh:mm:ssZ"}
 
 
 class OAIClient:
@@ -50,7 +52,7 @@ class OAIClient:
         client: httpx.Client | None = None,
         timeout: int = 20,
         use_post: bool = False,
-        datestamp_granularity: str = "YYYY-MM-DD",
+        datestamp_granularity: DatestampGranularity = "auto",
     ):
         """
         Initializes the OAIClient.
@@ -61,14 +63,26 @@ class OAIClient:
         :param use_post: Whether to use POST requests instead of GET.
         :param datestamp_granularity: The granularity to use when formatting datetime
             objects for selective harvesting. Valid values per the OAI-PMH spec are
-            "YYYY-MM-DD" and "YYYY-MM-DDThh:mm:ssZ". Defaults to day-level granularity,
-            which matches repositories (like arXiv) that reject second-level timestamps
-            in from/until parameters.
+            "YYYY-MM-DD" (day-level) and "YYYY-MM-DDThh:mm:ssZ" (second-level, UTC).
+            Use "auto" (default) to automatically select day-level for midnight
+            datetimes and second-level when any time component is present.
         """
         self.base_url = base_url
         self._client = client or httpx.Client(timeout=timeout, follow_redirects=True)
         self.use_post = use_post
+        if datestamp_granularity not in VALID_GRANULARITIES:
+            raise ValueError(
+                "datestamp_granularity must be one of 'auto', 'YYYY-MM-DD', or 'YYYY-MM-DDThh:mm:ssZ'"
+            )
         self.datestamp_granularity = datestamp_granularity
+
+    def _determine_granularity(self, dt: datetime) -> str:
+        if self.datestamp_granularity == "auto":
+            has_time_component = any(
+                (dt.hour, dt.minute, dt.second, dt.microsecond)
+            )
+            return "YYYY-MM-DDThh:mm:ssZ" if has_time_component else "YYYY-MM-DD"
+        return self.datestamp_granularity
 
     def _format_datestamp(self, dt: Datestamp) -> str:
         """
@@ -81,9 +95,9 @@ class OAIClient:
             dt = dt.replace(tzinfo=timezone.utc)
         # If the datetime object is aware, convert it to UTC.
         dt = dt.astimezone(timezone.utc)
-        if self.datestamp_granularity == "YYYY-MM-DD":
+        granularity = self._determine_granularity(dt)
+        if granularity == "YYYY-MM-DD":
             return dt.strftime("%Y-%m-%d")
-        # Default / fallback to second-level granularity
         return dt.strftime("%Y-%m-%dT%H:%M:%SZ")
 
     def _request(self, verb: str, **kwargs) -> etree._Element:
@@ -236,7 +250,7 @@ class OAIClient:
 
         while True:
             xml = self._request(verb, **params)
-            for element in xml.findall(".//oai:record", namespaces=NS):
+            for element in xml.findall("./oai:ListRecords/oai:record", namespaces=NS):
                 yield Record.from_xml(element)
 
             token_element = xml.find(".//oai:resumptionToken", namespaces=NS)

@@ -29,3 +29,6 @@ coverage.xml
 uv.lock
 .uv/
 .uv-cache/
+
+# ignore the notebook
+notebook.ipynb
