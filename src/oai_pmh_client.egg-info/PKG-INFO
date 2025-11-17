@@ -7,7 +7,6 @@ Description-Content-Type: text/markdown
 Requires-Dist: httpx
 Requires-Dist: lxml
 Requires-Dist: pydantic
-Requires-Dist: sqlalchemy>=2.0
 Provides-Extra: dev
 Requires-Dist: pytest; extra == "dev"
 Requires-Dist: pdoc; extra == "dev"
