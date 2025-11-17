@@ -8,7 +8,6 @@ dependencies = [
     "httpx",
     "lxml",
     "pydantic",
-    "sqlalchemy>=2.0",
 ]
 
 [project.optional-dependencies]
