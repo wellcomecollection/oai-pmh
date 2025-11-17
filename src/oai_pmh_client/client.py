@@ -1,5 +1,7 @@
+import logging
+import time
 from datetime import datetime, timezone
-from typing import Union, Iterator, Literal
+from typing import Union, Iterator, Literal, Sequence
 
 import httpx
 from lxml import etree
@@ -24,6 +26,9 @@ from .models import (
     ResumptionToken,
     NS,
 )
+
+logger = logging.getLogger(__name__)
+REDACTED_QUERY_VALUE = "REDACTED"
 
 OAI_ERROR_MAP = {
     "badArgument": BadArgumentError,
@@ -50,9 +55,13 @@ class OAIClient:
         self,
         base_url: str,
         client: httpx.Client | None = None,
-        timeout: int = 20,
+        timeout: int | httpx.Timeout = 20,
         use_post: bool = False,
         datestamp_granularity: DatestampGranularity = "auto",
+        max_request_retries: int = 3,
+        request_backoff_factor: float = 0.5,
+        request_max_backoff: float = 5.0,
+        redacted_query_params: Sequence[str] | None = None,
     ):
         """
         Initializes the OAIClient.
@@ -70,17 +79,21 @@ class OAIClient:
         self.base_url = base_url
         self._client = client or httpx.Client(timeout=timeout, follow_redirects=True)
         self.use_post = use_post
+        self.max_request_retries = max(1, max_request_retries)
+        self.request_backoff_factor = max(0.0, request_backoff_factor)
+        self.request_max_backoff = max(0.0, request_max_backoff)
         if datestamp_granularity not in VALID_GRANULARITIES:
             raise ValueError(
                 "datestamp_granularity must be one of 'auto', 'YYYY-MM-DD', or 'YYYY-MM-DDThh:mm:ssZ'"
             )
         self.datestamp_granularity = datestamp_granularity
+        self._redacted_query_params = {
+            param.lower() for param in (redacted_query_params or ["token"])
+        }
 
     def _determine_granularity(self, dt: datetime) -> str:
         if self.datestamp_granularity == "auto":
-            has_time_component = any(
-                (dt.hour, dt.minute, dt.second, dt.microsecond)
-            )
+            has_time_component = any((dt.hour, dt.minute, dt.second, dt.microsecond))
             return "YYYY-MM-DDThh:mm:ssZ" if has_time_component else "YYYY-MM-DD"
         return self.datestamp_granularity
 
@@ -108,16 +121,22 @@ class OAIClient:
         :param kwargs: Additional request parameters.
         :return: The parsed XML response.
         """
-        params = {"verb": verb}
+        params: dict[str, str | None] = {"verb": verb}
         # Filter out None values so they aren't included in the query
         for key, value in kwargs.items():
             if value is not None:
                 params[key] = value
 
         if self.use_post:
-            response = self._client.post(self.base_url, data=params)
+            request = self._client.build_request("POST", self.base_url, data=params)
         else:
-            response = self._client.get(self.base_url, params=params)
+            request = self._client.build_request("GET", self.base_url, params=params)
+
+        logger.debug(
+            "OAI request: %s %s", request.method, self._redact_url(request.url)
+        )
+
+        response = self._send_with_retries(request)
 
         response.raise_for_status()
         xml = etree.fromstring(response.content)
@@ -130,6 +149,43 @@ class OAIClient:
             raise exception_class(message)
 
         return xml
+
+    def _send_with_retries(self, request: httpx.Request) -> httpx.Response:
+        attempt = 0
+        while True:
+            attempt += 1
+            try:
+                return self._client.send(request)
+            except (httpx.ReadTimeout, httpx.ConnectTimeout, httpx.WriteTimeout):
+                if attempt >= self.max_request_retries:
+                    raise
+                delay = min(
+                    self.request_backoff_factor * (2 ** (attempt - 1)),
+                    self.request_max_backoff,
+                )
+                logger.warning(
+                    "Request timeout (attempt %s/%s). Retrying in %.2fs...",
+                    attempt,
+                    self.max_request_retries,
+                    delay,
+                )
+                if delay > 0:
+                    time.sleep(delay)
+
+    def _redact_url(self, url: httpx.URL) -> str:
+        if not self._redacted_query_params:
+            return str(url)
+        params = []
+        replaced = False
+        for key, value in url.params.multi_items():
+            if key.lower() in self._redacted_query_params and value is not None:
+                params.append((key, REDACTED_QUERY_VALUE))
+                replaced = True
+            else:
+                params.append((key, value))
+        if not replaced:
+            return str(url)
+        return str(url.copy_with(params=params))
 
     def identify(self) -> Identify:
         """
@@ -149,7 +205,7 @@ class OAIClient:
 
         :param identifier: An optional identifier to retrieve formats for a specific item.
         """
-        params = {}
+        params: dict[str, str] = {}
         if identifier:
             params["identifier"] = identifier
         xml = self._request("ListMetadataFormats", **params)
@@ -160,7 +216,7 @@ class OAIClient:
         """
         Performs the ListSets request, handles resumption tokens, and yields Set objects.
         """
-        params = {}
+        params: dict[str, str] = {}
         verb = "ListSets"
         while True:
             xml = self._request(verb, **params)
@@ -203,7 +259,7 @@ class OAIClient:
         :param until_date: An optional end date for selective harvesting.
         :param set_spec: An optional set specification for selective harvesting.
         """
-        params = {
+        params: dict[str, str | None] = {
             "metadataPrefix": metadata_prefix,
             "from": self._format_datestamp(from_date) if from_date else None,
             "until": self._format_datestamp(until_date) if until_date else None,
@@ -224,7 +280,6 @@ class OAIClient:
             # When using a resumption token, the original parameters must be omitted
             params = {"resumptionToken": token.value}
 
-
     def list_records(
         self,
         metadata_prefix: str,
@@ -240,7 +295,7 @@ class OAIClient:
         :param until_date: An optional end date for selective harvesting.
         :param set_spec: An optional set specification for selective harvesting.
         """
-        params = {
+        params: dict[str, str | None] = {
             "metadataPrefix": metadata_prefix,
             "from": self._format_datestamp(from_date) if from_date else None,
             "until": self._format_datestamp(until_date) if until_date else None,

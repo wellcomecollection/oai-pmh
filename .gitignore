@@ -32,3 +32,9 @@ uv.lock
 
 # ignore the notebook
 notebook.ipynb
+
+# Generated harvesting artifacts
+data/
+
+# macOS
+.DS_Store

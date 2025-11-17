@@ -8,6 +8,7 @@ dependencies = [
     "httpx",
     "lxml",
     "pydantic",
+    "sqlalchemy>=2.0",
 ]
 
 [project.optional-dependencies]
@@ -21,3 +22,24 @@ dev = [
 markers = [
     "integration: marks tests as integration tests (makes network requests)",
 ]
+
+[dependency-groups]
+dev = [
+    "mypy>=1.18.2",
+    "ruff>=0.14.5",
+]
+
+[tool.mypy]
+python_version = "3.12"
+exclude = [
+    "build/",
+]
+
+[[tool.mypy.overrides]]
+module = [
+    "lxml",
+    "lxml.*",
+    "pytest",
+    "pytest_httpx",
+]
+ignore_missing_imports = true

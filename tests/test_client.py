@@ -1,8 +1,10 @@
+import logging
 from datetime import datetime
 from pathlib import Path
 
 import pytest
 from pytest_httpx import HTTPXMock
+import httpx
 
 from oai_pmh_client import (
     OAIClient,
@@ -26,12 +28,14 @@ def client():
     """
     return OAIClient(BASE_URL)
 
+
 @pytest.fixture
 def mock_client_get(httpx_mock: HTTPXMock):
     """
     Returns an OAIClient instance with a mocked HTTPX client using GET.
     """
     return OAIClient(BASE_URL, use_post=False)
+
 
 @pytest.fixture
 def mock_client_post(httpx_mock: HTTPXMock):
@@ -40,14 +44,17 @@ def mock_client_post(httpx_mock: HTTPXMock):
     """
     return OAIClient(BASE_URL, use_post=True)
 
+
 def load_test_data(filename: str) -> bytes:
     """
     Loads test data from the tests/data directory.
     """
     return (Path(__file__).parent / "data" / filename).read_bytes()
 
+
 # The following tests are integration tests and will make live HTTP requests.
 # They are marked with 'integration' and can be skipped with `pytest -m "not integration"`.
+
 
 @pytest.mark.integration
 def test_identify(client: OAIClient):
@@ -60,6 +67,7 @@ def test_identify(client: OAIClient):
     assert response.base_url == CANONICAL_BASE_URL
     assert response.protocol_version == "2.0"
 
+
 @pytest.mark.integration
 def test_list_metadata_formats(client: OAIClient):
     """
@@ -71,6 +79,7 @@ def test_list_metadata_formats(client: OAIClient):
     prefixes = [f.prefix for f in formats]
     assert "oai_dc" in prefixes
 
+
 @pytest.mark.integration
 def test_list_sets(client: OAIClient):
     """
@@ -79,6 +88,7 @@ def test_list_sets(client: OAIClient):
     sets = list(client.list_sets())
     assert len(sets) > 0
     assert all(isinstance(s, Set) for s in sets)
+
 
 @pytest.mark.integration
 def test_get_record(client: OAIClient):
@@ -93,6 +103,7 @@ def test_get_record(client: OAIClient):
     assert not record.header.is_deleted
     assert record.metadata is not None
 
+
 @pytest.mark.integration
 def test_list_identifiers(client: OAIClient):
     """
@@ -100,9 +111,13 @@ def test_list_identifiers(client: OAIClient):
     """
     # Take just a few items to avoid fetching the whole list
     from itertools import islice
-    identifiers = list(islice(client.list_identifiers(metadata_prefix="oai_dc", set_spec="cs"), 5))
+
+    identifiers = list(
+        islice(client.list_identifiers(metadata_prefix="oai_dc", set_spec="cs"), 5)
+    )
     assert len(identifiers) > 0
     assert all(isinstance(i, Header) for i in identifiers)
+
 
 @pytest.mark.integration
 def test_list_records(client: OAIClient):
@@ -111,11 +126,16 @@ def test_list_records(client: OAIClient):
     """
     # Take just a few items to avoid fetching the whole list
     from itertools import islice
-    records = list(islice(client.list_records(metadata_prefix="oai_dc", set_spec="cs"), 5))
+
+    records = list(
+        islice(client.list_records(metadata_prefix="oai_dc", set_spec="cs"), 5)
+    )
     assert len(records) > 0
     assert all(isinstance(r, Record) for r in records)
 
+
 # The following tests are unit tests using mocked responses.
+
 
 def test_oai_error(mock_client_get: OAIClient, httpx_mock: HTTPXMock):
     """
@@ -129,7 +149,10 @@ def test_oai_error(mock_client_get: OAIClient, httpx_mock: HTTPXMock):
     with pytest.raises(BadArgumentError):
         list(mock_client_get.list_records(metadata_prefix="invalid"))
 
-def test_list_records_auto_granularity_with_time(mock_client_get: OAIClient, httpx_mock: HTTPXMock):
+
+def test_list_records_auto_granularity_with_time(
+    mock_client_get: OAIClient, httpx_mock: HTTPXMock
+):
     """Default auto granularity preserves second-level precision when time is present."""
     httpx_mock.add_response(
         method="GET",
@@ -137,12 +160,16 @@ def test_list_records_auto_granularity_with_time(mock_client_get: OAIClient, htt
         content=load_test_data("list_records_final.xml"),
     )
     from_date = datetime(2024, 1, 1, 12, 0, 0)
-    records = list(mock_client_get.list_records(metadata_prefix="oai_dc", from_date=from_date))
+    records = list(
+        mock_client_get.list_records(metadata_prefix="oai_dc", from_date=from_date)
+    )
     assert len(records) == 1
     assert isinstance(records[0], Record)
 
 
-def test_list_records_auto_granularity_midnight(mock_client_get: OAIClient, httpx_mock: HTTPXMock):
+def test_list_records_auto_granularity_midnight(
+    mock_client_get: OAIClient, httpx_mock: HTTPXMock
+):
     """Auto granularity falls back to day-level formatting for midnight datetimes."""
     httpx_mock.add_response(
         method="GET",
@@ -150,7 +177,9 @@ def test_list_records_auto_granularity_midnight(mock_client_get: OAIClient, http
         content=load_test_data("list_records_final.xml"),
     )
     from_date = datetime(2024, 1, 1, 0, 0, 0)
-    records = list(mock_client_get.list_records(metadata_prefix="oai_dc", from_date=from_date))
+    records = list(
+        mock_client_get.list_records(metadata_prefix="oai_dc", from_date=from_date)
+    )
     assert len(records) == 1
     assert isinstance(records[0], Record)
 
@@ -182,7 +211,10 @@ def test_list_records_with_datetime_seconds_granularity(httpx_mock: HTTPXMock):
     assert len(records) == 1
     assert isinstance(records[0], Record)
 
-def test_list_records_with_resumption(mock_client_get: OAIClient, httpx_mock: HTTPXMock):
+
+def test_list_records_with_resumption(
+    mock_client_get: OAIClient, httpx_mock: HTTPXMock
+):
     """
     Tests that the client correctly handles resumption tokens with GET.
     """
@@ -203,7 +235,10 @@ def test_list_records_with_resumption(mock_client_get: OAIClient, httpx_mock: HT
     assert records[1].header is not None
     assert records[1].header.identifier == "oai:example.org:2"
 
-def test_list_records_with_resumption_post(mock_client_post: OAIClient, httpx_mock: HTTPXMock):
+
+def test_list_records_with_resumption_post(
+    mock_client_post: OAIClient, httpx_mock: HTTPXMock
+):
     """
     Tests that the client correctly handles resumption tokens with POST.
     """
@@ -211,13 +246,13 @@ def test_list_records_with_resumption_post(mock_client_post: OAIClient, httpx_mo
         method="POST",
         url=BASE_URL,
         content=load_test_data("list_records_resumption.xml"),
-        match_content=b"verb=ListRecords&metadataPrefix=oai_dc"
+        match_content=b"verb=ListRecords&metadataPrefix=oai_dc",
     )
     httpx_mock.add_response(
         method="POST",
         url=BASE_URL,
         content=load_test_data("list_records_final.xml"),
-        match_content=b"verb=ListRecords&resumptionToken=token123"
+        match_content=b"verb=ListRecords&resumptionToken=token123",
     )
     records = list(mock_client_post.list_records(metadata_prefix="oai_dc"))
     assert len(records) == 2
@@ -226,24 +261,88 @@ def test_list_records_with_resumption_post(mock_client_post: OAIClient, httpx_mo
     assert records[1].header is not None
     assert records[1].header.identifier == "oai:example.org:2"
 
+
 def test_record_without_header(mock_client_get: OAIClient, httpx_mock: HTTPXMock):
     """
     Tests that the client correctly handles records without headers.
     """
     from lxml import etree
     from oai_pmh_client.models import Record
-    
+
     # Load and parse the test XML
     xml_content = load_test_data("record_no_header.xml")
     root = etree.fromstring(xml_content)
-    
+
     # Find the record element
     ns = {"oai": "http://www.openarchives.org/OAI/2.0/"}
     record_element = root.find(".//oai:record", namespaces=ns)
-    
+
     # Parse the record
     record = Record.from_xml(record_element)
-    
+
     assert isinstance(record, Record)
     assert record.header is None
     assert record.metadata is not None
+
+
+def test_debug_logging_emits_request_urls(httpx_mock: HTTPXMock, caplog):
+    client = OAIClient(BASE_URL, use_post=False)
+    httpx_mock.add_response(
+        method="GET",
+        url=f"{BASE_URL}?verb=ListRecords&metadataPrefix=oai_dc",
+        content=load_test_data("list_records_final.xml"),
+    )
+    with caplog.at_level(logging.DEBUG):
+        list(client.list_records(metadata_prefix="oai_dc"))
+
+    assert any(
+        "OAI request: GET" in message and f"{BASE_URL}?verb=ListRecords" in message
+        for message in caplog.messages
+    )
+
+
+def test_logging_redacts_configured_params(httpx_mock: HTTPXMock, caplog):
+    client = OAIClient(
+        BASE_URL, use_post=False, redacted_query_params=["token", "apikey"]
+    )
+    httpx_mock.add_response(
+        method="GET",
+        url=f"{BASE_URL}?verb=Identify&token=supersecret&apikey=topsecret",
+        content=b"""
+            <OAI-PMH xmlns:oai=\"http://www.openarchives.org/OAI/2.0/\">
+              <oai:responseDate>2025-01-01T00:00:00Z</oai:responseDate>
+            </OAI-PMH>
+        """,
+    )
+    with caplog.at_level(logging.DEBUG):
+        client._request("Identify", token="supersecret", apikey="topsecret")
+
+    logged = next(
+        (message for message in caplog.messages if "OAI request: GET" in message),
+        "",
+    )
+    assert "REDACTED" in logged
+    assert "supersecret" not in logged
+    assert "topsecret" not in logged
+
+
+def test_request_retries_on_timeout(httpx_mock: HTTPXMock):
+    client = OAIClient(
+        BASE_URL,
+        use_post=False,
+        max_request_retries=2,
+        request_backoff_factor=0.0,
+    )
+    httpx_mock.add_exception(
+        method="GET",
+        url=f"{BASE_URL}?verb=ListRecords&metadataPrefix=oai_dc",
+        exception=httpx.ReadTimeout("Read timed out"),
+    )
+    httpx_mock.add_response(
+        method="GET",
+        url=f"{BASE_URL}?verb=ListRecords&metadataPrefix=oai_dc",
+        content=load_test_data("list_records_final.xml"),
+    )
+
+    records = list(client.list_records(metadata_prefix="oai_dc"))
+    assert len(records) == 1

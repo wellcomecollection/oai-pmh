@@ -36,4 +36,8 @@ __all__ = [
     "Set",
     "Record",
     "ResumptionToken",
+    "WindowHarvestManager",
+    "WindowCoverageReport",
+    "WindowFailure",
+    "CoverageGap",
 ]

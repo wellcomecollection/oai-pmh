@@ -1,6 +1,6 @@
 from __future__ import annotations
 from datetime import datetime
-from typing import Any, Iterator, Optional, Self
+from typing import Any, Optional, Self
 
 from lxml import etree
 from pydantic import BaseModel, Field, field_validator, ConfigDict
@@ -24,16 +24,33 @@ def _find_text(element: etree._Element, xpath: str) -> str | None:
     return element.findtext(xpath, namespaces=NS)
 
 
+def _require_text(element: etree._Element, xpath: str) -> str:
+    value = _find_text(element, xpath)
+    if value is None:
+        raise ValueError(f"Missing required text for xpath '{xpath}'")
+    return value
+
+
+def _parse_datestamp(value: str) -> datetime:
+    normalized = value.strip()
+    if normalized.endswith("Z"):
+        normalized = normalized[:-1] + "+00:00"
+    return datetime.fromisoformat(normalized)
+
+
 class ResumptionToken(BaseModel):
     """
     Represents a resumption token for fetching further results.
     """
+
     value: str = Field(..., description="The resumption token string.")
     expiration_date: Optional[datetime] = Field(
         None, alias="expirationDate", description="The expiration date of the token."
     )
     complete_list_size: Optional[int] = Field(
-        None, alias="completeListSize", description="The total number of records in the list."
+        None,
+        alias="completeListSize",
+        description="The total number of records in the list.",
     )
     cursor: Optional[int] = Field(None, description="The current position in the list.")
 
@@ -52,10 +69,9 @@ class Header(BaseModel):
     """
     Represents the header of a record.
     """
+
     identifier: str = Field(..., description="The unique identifier of the item.")
-    datestamp: datetime = Field(
-        ..., description="The datestamp of the record."
-    )
+    datestamp: datetime = Field(..., description="The datestamp of the record.")
     set_specs: list[str] = Field(
         default_factory=list,
         alias="setSpec",
@@ -75,9 +91,11 @@ class Header(BaseModel):
     def from_xml(cls, element: etree._Element) -> Self:
         """Parses a Header from an XML element."""
         return cls(
-            identifier=_find_text(element, "oai:identifier"),
-            datestamp=_find_text(element, "oai:datestamp"),
-            setSpec=[spec.text for spec in _find_all(element, "oai:setSpec") if spec.text],
+            identifier=_require_text(element, "oai:identifier"),
+            datestamp=_parse_datestamp(_require_text(element, "oai:datestamp")),
+            setSpec=[
+                spec.text for spec in _find_all(element, "oai:setSpec") if spec.text
+            ],
             status=element.get("status"),
         )
 
@@ -86,10 +104,11 @@ class MetadataFormat(BaseModel):
     """
     Represents a metadata format supported by the repository.
     """
-    prefix: str = Field(
-        ..., alias="metadataPrefix", description="The metadata prefix."
+
+    prefix: str = Field(..., alias="metadataPrefix", description="The metadata prefix.")
+    schema_location: str = Field(
+        ..., alias="schema", description="The URL of the XML schema."
     )
-    schema_location: str = Field(..., alias="schema", description="The URL of the XML schema.")
     namespace: str = Field(
         ..., alias="metadataNamespace", description="The XML namespace URI."
     )
@@ -98,9 +117,9 @@ class MetadataFormat(BaseModel):
     def from_xml(cls, element: etree._Element) -> Self:
         """Parses a MetadataFormat from an XML element."""
         return cls(
-            metadataPrefix=_find_text(element, "oai:metadataPrefix"),
-            schema=_find_text(element, "oai:schema"),
-            metadataNamespace=_find_text(element, "oai:metadataNamespace"),
+            metadataPrefix=_require_text(element, "oai:metadataPrefix"),
+            schema=_require_text(element, "oai:schema"),
+            metadataNamespace=_require_text(element, "oai:metadataNamespace"),
         )
 
 
@@ -108,6 +127,7 @@ class Set(BaseModel):
     """
     Represents a set in the repository.
     """
+
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
     spec: str = Field(..., alias="setSpec", description="The set specification.")
@@ -128,8 +148,8 @@ class Set(BaseModel):
     def from_xml(cls, element: etree._Element) -> Self:
         """Parses a Set from an XML element."""
         return cls(
-            setSpec=_find_text(element, "oai:setSpec"),
-            setName=_find_text(element, "oai:setName"),
+            setSpec=_require_text(element, "oai:setSpec"),
+            setName=_require_text(element, "oai:setName"),
             setDescription=_find(element, "oai:setDescription"),
         )
 
@@ -138,6 +158,7 @@ class Record(BaseModel):
     """
     Represents a single record.
     """
+
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
     header: Optional[Header] = Field(None, description="The record header.")
@@ -158,7 +179,9 @@ class Record(BaseModel):
         header_element = _find(element, "oai:header")
 
         return cls(
-            header=Header.from_xml(header_element) if header_element is not None else None,
+            header=Header.from_xml(header_element)
+            if header_element is not None
+            else None,
             metadata=_find(element, "oai:metadata"),
         )
 
@@ -167,6 +190,7 @@ class Identify(BaseModel):
     """
     Represents the response from an Identify request.
     """
+
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
     repository_name: str = Field(..., alias="repositoryName")
@@ -191,15 +215,19 @@ class Identify(BaseModel):
     def from_xml(cls, element: etree._Element) -> Self:
         """Parses an Identify response from an XML element."""
         return cls(
-            repositoryName=_find_text(element, "oai:repositoryName"),
-            baseURL=_find_text(element, "oai:baseURL"),
-            protocolVersion=_find_text(element, "oai:protocolVersion"),
+            repositoryName=_require_text(element, "oai:repositoryName"),
+            baseURL=_require_text(element, "oai:baseURL"),
+            protocolVersion=_require_text(element, "oai:protocolVersion"),
             adminEmail=[
-                email.text for email in _find_all(element, "oai:adminEmail") if email.text
+                email.text
+                for email in _find_all(element, "oai:adminEmail")
+                if email.text
             ],
-            earliestDatestamp=_find_text(element, "oai:earliestDatestamp"),
-            deletedRecord=_find_text(element, "oai:deletedRecord"),
-            granularity=_find_text(element, "oai:granularity"),
+            earliestDatestamp=_parse_datestamp(
+                _require_text(element, "oai:earliestDatestamp")
+            ),
+            deletedRecord=_require_text(element, "oai:deletedRecord"),
+            granularity=_require_text(element, "oai:granularity"),
             compression=[
                 comp.text for comp in _find_all(element, "oai:compression") if comp.text
             ],

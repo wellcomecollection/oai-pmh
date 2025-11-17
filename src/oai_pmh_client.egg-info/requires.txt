@@ -1,6 +1,7 @@
 httpx
 lxml
 pydantic
+sqlalchemy>=2.0
 
 [dev]
 pytest
