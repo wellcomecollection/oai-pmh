@@ -36,6 +36,13 @@ def mock_client_get(httpx_mock: HTTPXMock):
     """
     return OAIClient(BASE_URL, use_post=False)
 
+    def test_redaction_with_single_token_param():
+        client = OAIClient(BASE_URL)
+        url = httpx.URL(f"{BASE_URL}?token=supersecret")
+        redacted = client._redact_url(url)
+        assert "REDACTED" in redacted
+        assert "supersecret" not in redacted
+
 
 @pytest.fixture
 def mock_client_post(httpx_mock: HTTPXMock):
@@ -307,7 +314,7 @@ def test_logging_redacts_configured_params(httpx_mock: HTTPXMock, caplog):
     )
     httpx_mock.add_response(
         method="GET",
-        url=f"{BASE_URL}?verb=Identify&token=supersecret&apikey=topsecret",
+        url=f"{BASE_URL}?verb=Identify&apikey=topsecret&token=supersecret",
         content=b"""
             <OAI-PMH xmlns:oai=\"http://www.openarchives.org/OAI/2.0/\">
               <oai:responseDate>2025-01-01T00:00:00Z</oai:responseDate>

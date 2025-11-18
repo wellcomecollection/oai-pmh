@@ -128,6 +128,10 @@ except IdDoesNotExistError as e:
     print(f"Caught expected error: {e}")
 ```
 
+#### Notebook example
+
+See the [`notebooks/arxiv_recent_changes.ipynb`](notebooks/arxiv_recent_changes.ipynb) notebook for an example of using the client to fetch recent changes from the arXiv OAI-PMH endpoint.
+
 ## Testing
 
 To run the tests, you will need to install the development dependencies:
