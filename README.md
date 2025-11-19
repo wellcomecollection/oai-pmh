@@ -145,3 +145,18 @@ Then, you can run the tests using `pytest`:
 ```bash
 pytest
 ```
+
+## Releases
+
+This repository uses [Release Please](https://github.com/googleapis/release-please) to automate releases.
+
+When you merge a pull request to the `main` branch, Release Please will:
+
+1.  Create or update a "Release PR" with the changelog and version bump.
+2.  When you merge that Release PR, it will create a GitHub Release and tag the commit.
+
+To trigger a release:
+
+1.  Ensure your PR titles follow the [Conventional Commits](https://www.conventionalcommits.org/) specification (e.g., `feat: add new feature`, `fix: bug fix`).
+2.  Merge your PRs into `main`.
+3.  Review and merge the Release PR created by the bot.
