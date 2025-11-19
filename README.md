@@ -14,7 +14,7 @@ uv pip install .
 
 ## Documentation
 
-Full documentation is available at [https://kenoir.github.io/oai-pmh/](https://kenoir.github.io/oai-pmh/).
+Full documentation is available at [https://wellcomecollection.github.io/oai-pmh/](https://wellcomecollection.github.io/oai-pmh/).
 
 ### Updating the documentation
 
