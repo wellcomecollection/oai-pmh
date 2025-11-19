@@ -269,6 +269,33 @@ def test_list_records_with_resumption_post(
     assert records[1].header.identifier == "oai:example.org:2"
 
 
+def test_list_records_with_deletion(mock_client_get: OAIClient, httpx_mock: HTTPXMock):
+    """
+    Tests that the client correctly handles deleted records.
+    """
+    httpx_mock.add_response(
+        method="GET",
+        url=f"{BASE_URL}?verb=ListRecords&metadataPrefix=oai_dc",
+        content=load_test_data("list_records_with_deletion.xml"),
+    )
+    records = list(mock_client_get.list_records(metadata_prefix="oai_dc"))
+    assert len(records) == 2
+
+    # Check the deleted record
+    deleted_record = records[0]
+    assert deleted_record.header is not None
+    assert deleted_record.header.identifier == "oai:example.org:deleted-record"
+    assert deleted_record.header.is_deleted
+    assert deleted_record.metadata is None
+
+    # Check the active record
+    active_record = records[1]
+    assert active_record.header is not None
+    assert active_record.header.identifier == "oai:example.org:active-record"
+    assert not active_record.header.is_deleted
+    assert active_record.metadata is not None
+
+
 def test_record_without_header(mock_client_get: OAIClient, httpx_mock: HTTPXMock):
     """
     Tests that the client correctly handles records without headers.

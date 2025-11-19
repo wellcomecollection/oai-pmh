@@ -80,7 +80,7 @@ class Header(BaseModel):
     is_deleted: bool = Field(
         False,
         alias="status",
-        description="A boolean indicating if the record is deleted.",
+        description="A boolean indicating if the record is deleted. If True, the record will typically have no metadata.",
     )
 
     @field_validator("is_deleted", mode="before")

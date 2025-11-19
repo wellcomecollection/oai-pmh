@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<OAI-PMH xmlns="http://www.openarchives.org/OAI/2.0/"
+           xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+           xsi:schemaLocation="http://www.openarchives.org/OAI/2.0/
+                               http://www.openarchives.org/OAI/2.0/OAI-PMH.xsd">
+    <responseDate>2024-01-01T12:00:01Z</responseDate>
+    <request verb="ListRecords" metadataPrefix="oai_dc">http://example.com/oai</request>
+    <ListRecords>
+        <record>
+            <header status="deleted">
+                <identifier>oai:example.org:deleted-record</identifier>
+                <datestamp>2024-01-01T00:00:01Z</datestamp>
+            </header>
+        </record>
+        <record>
+            <header>
+                <identifier>oai:example.org:active-record</identifier>
+                <datestamp>2024-01-01T00:00:02Z</datestamp>
+            </header>
+            <metadata>
+                <oai_dc:dc xmlns:oai_dc="http://www.openarchives.org/OAI/2.0/oai_dc/"
+                           xmlns:dc="http://purl.org/dc/elements/1.1/"
+                           xsi:schemaLocation="http://www.openarchives.org/OAI/2.0/oai_dc/ http://www.openarchives.org/OAI/2.0/oai_dc.xsd">
+                    <dc:title>Active Record</dc:title>
+                </oai_dc:dc>
+            </metadata>
+        </record>
+    </ListRecords>
+</OAI-PMH>
