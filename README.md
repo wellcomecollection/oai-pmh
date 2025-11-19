@@ -115,6 +115,22 @@ record = client.get_record("oai:arXiv.org:2401.00001", "oai_dc")
 print(record.metadata)
 ```
 
+#### Handling Deleted Records
+
+OAI-PMH repositories may return records that have been deleted. These records will have a header with `status="deleted"` and no metadata. The client exposes this via the `is_deleted` property on the record header.
+
+```python
+records = client.list_records(metadata_prefix="oai_dc")
+
+for record in records:
+    if record.header.is_deleted:
+        print(f"Record {record.header.identifier} has been deleted.")
+        continue
+        
+    # Process active records
+    print(record.metadata)
+```
+
 #### Error Handling
 
 The client will raise an `OAIError` subclass for errors returned by the OAI-PMH server.
