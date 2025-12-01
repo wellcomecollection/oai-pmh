@@ -1,5 +1,5 @@
 import logging
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
 from pathlib import Path
 
 import pytest
@@ -380,3 +380,78 @@ def test_request_retries_on_timeout(httpx_mock: HTTPXMock):
 
     records = list(client.list_records(metadata_prefix="oai_dc"))
     assert len(records) == 1
+
+
+def test_mixed_granularity_bug(httpx_mock: HTTPXMock):
+    """
+    Reproduces the bug where mixed granularity (one date at midnight, one with time)
+    results in inconsistent granularity in the request URL.
+    """
+    client = OAIClient(BASE_URL)
+
+    # from_date is at midnight (00:00:00)
+    from_date = datetime(2024, 1, 1, 0, 0, 0, tzinfo=timezone.utc)
+    # until_date has a time component
+    until_date = datetime(2024, 1, 2, 12, 0, 0, tzinfo=timezone.utc)
+
+    # We expect the client to use seconds granularity for BOTH because one of them has time.
+
+    # We mock the response to avoid actual network call, but we want to inspect the request URL.
+    httpx_mock.add_response(
+        method="GET",
+        url=f"{BASE_URL}?verb=ListRecords&metadataPrefix=oai_dc&from=2024-01-01T00%3A00%3A00Z&until=2024-01-02T12%3A00%3A00Z",
+        content=b"<root></root>",  # Dummy content
+    )
+
+    try:
+        list(
+            client.list_records(
+                metadata_prefix="oai_dc", from_date=from_date, until_date=until_date
+            )
+        )
+    except Exception:
+        pass
+
+    # Let's inspect the actual request made
+    request = httpx_mock.get_request()
+    assert request is not None
+
+    url = request.url
+
+    # We want to assert that we get the CORRECT behavior (consistent granularity).
+    # So we assert that 'from' parameter contains 'T' (indicating time component)
+    assert "from=2024-01-01T00%3A00%3A00Z" in str(
+        url
+    ) or "from=2024-01-01T00:00:00Z" in str(url)
+
+
+def test_timezone_aware_midnight_granularity(httpx_mock: HTTPXMock):
+    """
+    Tests that a timezone-aware datetime that is midnight in local time
+    but NOT midnight in UTC results in seconds-level granularity.
+    """
+    client = OAIClient(BASE_URL)
+
+    # Midnight CET (UTC+1) is 23:00 UTC previous day.
+    # Should be treated as having time component.
+    cet = timezone(timedelta(hours=1))
+    from_date = datetime(2024, 1, 1, 0, 0, 0, tzinfo=cet)
+
+    # We expect seconds granularity: 2023-12-31T23:00:00Z
+    expected_param = "from=2023-12-31T23%3A00%3A00Z"
+
+    httpx_mock.add_response(
+        method="GET",
+        url=f"{BASE_URL}?verb=ListRecords&metadataPrefix=oai_dc&{expected_param}",
+        content=b"<root></root>",
+    )
+
+    try:
+        list(client.list_records(metadata_prefix="oai_dc", from_date=from_date))
+    except Exception:
+        pass
+
+    request = httpx_mock.get_request()
+    assert request is not None
+
+    assert expected_param in str(request.url)

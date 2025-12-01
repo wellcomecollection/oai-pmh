@@ -1,6 +1,6 @@
 Metadata-Version: 2.4
 Name: oai-pmh-client
-Version: 0.1.0
+Version: 1.0.0
 Summary: A modern Python client for OAI-PMH (Open Archives Initiative Protocol for Metadata Harvesting).
 Requires-Python: >=3.12
 Description-Content-Type: text/markdown
@@ -28,7 +28,7 @@ uv pip install .
 
 ## Documentation
 
-Full documentation is available at [https://kenoir.github.io/oai-pmh/](https://kenoir.github.io/oai-pmh/).
+Full documentation is available at [https://wellcomecollection.github.io/oai-pmh/](https://wellcomecollection.github.io/oai-pmh/).
 
 ### Updating the documentation
 
@@ -129,6 +129,22 @@ record = client.get_record("oai:arXiv.org:2401.00001", "oai_dc")
 print(record.metadata)
 ```
 
+#### Handling Deleted Records
+
+OAI-PMH repositories may return records that have been deleted. These records will have a header with `status="deleted"` and no metadata. The client exposes this via the `is_deleted` property on the record header.
+
+```python
+records = client.list_records(metadata_prefix="oai_dc")
+
+for record in records:
+    if record.header.is_deleted:
+        print(f"Record {record.header.identifier} has been deleted.")
+        continue
+        
+    # Process active records
+    print(record.metadata)
+```
+
 #### Error Handling
 
 The client will raise an `OAIError` subclass for errors returned by the OAI-PMH server.
@@ -141,6 +157,10 @@ try:
 except IdDoesNotExistError as e:
     print(f"Caught expected error: {e}")
 ```
+
+#### Notebook example
+
+See the [`notebooks/arxiv_recent_changes.ipynb`](notebooks/arxiv_recent_changes.ipynb) notebook for an example of using the client to fetch recent changes from the arXiv OAI-PMH endpoint.
 
 ## Testing
 
@@ -155,3 +175,18 @@ Then, you can run the tests using `pytest`:
 ```bash
 pytest
 ```
+
+## Releases
+
+This repository uses [Release Please](https://github.com/googleapis/release-please) to automate releases.
+
+When you merge a pull request to the `main` branch, Release Please will:
+
+1.  Create or update a "Release PR" with the changelog and version bump.
+2.  When you merge that Release PR, it will create a GitHub Release and tag the commit.
+
+To trigger a release:
+
+1.  Ensure your PR titles follow the [Conventional Commits](https://www.conventionalcommits.org/) specification (e.g., `feat: add new feature`, `fix: bug fix`).
+2.  Merge your PRs into `main`.
+3.  Review and merge the Release PR created by the bot.

@@ -97,7 +97,24 @@ class OAIClient:
             return "YYYY-MM-DDThh:mm:ssZ" if has_time_component else "YYYY-MM-DD"
         return self.datestamp_granularity
 
-    def _format_datestamp(self, dt: Datestamp) -> str:
+    def _determine_granularity_for_dates(
+        self, dates: Sequence[Datestamp | None]
+    ) -> str:
+        if self.datestamp_granularity != "auto":
+            return self.datestamp_granularity
+
+        for dt in dates:
+            if isinstance(dt, datetime):
+                # Ensure we check granularity against UTC time
+                if dt.tzinfo is None:
+                    dt = dt.replace(tzinfo=timezone.utc)
+                dt = dt.astimezone(timezone.utc)
+
+                if any((dt.hour, dt.minute, dt.second, dt.microsecond)):
+                    return "YYYY-MM-DDThh:mm:ssZ"
+        return "YYYY-MM-DD"
+
+    def _format_datestamp(self, dt: Datestamp, granularity: str | None = None) -> str:
         """
         Formats a datetime object into an OAI-PMH datestamp string.
         """
@@ -108,7 +125,10 @@ class OAIClient:
             dt = dt.replace(tzinfo=timezone.utc)
         # If the datetime object is aware, convert it to UTC.
         dt = dt.astimezone(timezone.utc)
-        granularity = self._determine_granularity(dt)
+
+        if granularity is None:
+            granularity = self._determine_granularity(dt)
+
         if granularity == "YYYY-MM-DD":
             return dt.strftime("%Y-%m-%d")
         return dt.strftime("%Y-%m-%dT%H:%M:%SZ")
@@ -259,10 +279,15 @@ class OAIClient:
         :param until_date: An optional end date for selective harvesting.
         :param set_spec: An optional set specification for selective harvesting.
         """
+        granularity = self._determine_granularity_for_dates([from_date, until_date])
         params: dict[str, str | None] = {
             "metadataPrefix": metadata_prefix,
-            "from": self._format_datestamp(from_date) if from_date else None,
-            "until": self._format_datestamp(until_date) if until_date else None,
+            "from": self._format_datestamp(from_date, granularity)
+            if from_date
+            else None,
+            "until": self._format_datestamp(until_date, granularity)
+            if until_date
+            else None,
             "set": set_spec,
         }
         verb = "ListIdentifiers"
@@ -295,10 +320,15 @@ class OAIClient:
         :param until_date: An optional end date for selective harvesting.
         :param set_spec: An optional set specification for selective harvesting.
         """
+        granularity = self._determine_granularity_for_dates([from_date, until_date])
         params: dict[str, str | None] = {
             "metadataPrefix": metadata_prefix,
-            "from": self._format_datestamp(from_date) if from_date else None,
-            "until": self._format_datestamp(until_date) if until_date else None,
+            "from": self._format_datestamp(from_date, granularity)
+            if from_date
+            else None,
+            "until": self._format_datestamp(until_date, granularity)
+            if until_date
+            else None,
             "set": set_spec,
         }
         verb = "ListRecords"
