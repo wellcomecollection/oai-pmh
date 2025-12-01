@@ -28,7 +28,6 @@ from .models import (
 )
 
 logger = logging.getLogger(__name__)
-REDACTED_QUERY_VALUE = "REDACTED"
 
 OAI_ERROR_MAP = {
     "badArgument": BadArgumentError,
@@ -61,7 +60,6 @@ class OAIClient:
         max_request_retries: int = 3,
         request_backoff_factor: float = 0.5,
         request_max_backoff: float = 5.0,
-        redacted_query_params: Sequence[str] | None = None,
     ):
         """
         Initializes the OAIClient.
@@ -87,9 +85,6 @@ class OAIClient:
                 "datestamp_granularity must be one of 'auto', 'YYYY-MM-DD', or 'YYYY-MM-DDThh:mm:ssZ'"
             )
         self.datestamp_granularity = datestamp_granularity
-        self._redacted_query_params = {
-            param.lower() for param in (redacted_query_params or ["token"])
-        }
 
     def _determine_granularity(self, dt: datetime) -> str:
         if self.datestamp_granularity == "auto":
@@ -153,7 +148,7 @@ class OAIClient:
             request = self._client.build_request("GET", self.base_url, params=params)
 
         logger.debug(
-            "OAI request: %s %s", request.method, self._redact_url(request.url)
+            "OAI request: %s %s", request.method, request.url
         )
 
         response = self._send_with_retries(request)
@@ -191,21 +186,6 @@ class OAIClient:
                 )
                 if delay > 0:
                     time.sleep(delay)
-
-    def _redact_url(self, url: httpx.URL) -> str:
-        if not self._redacted_query_params:
-            return str(url)
-        params = []
-        replaced = False
-        for key, value in url.params.multi_items():
-            if key.lower() in self._redacted_query_params and value is not None:
-                params.append((key, REDACTED_QUERY_VALUE))
-                replaced = True
-            else:
-                params.append((key, value))
-        if not replaced:
-            return str(url)
-        return str(url.copy_with(params=params))
 
     def identify(self) -> Identify:
         """
