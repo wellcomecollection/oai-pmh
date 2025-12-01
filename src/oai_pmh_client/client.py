@@ -147,9 +147,7 @@ class OAIClient:
         else:
             request = self._client.build_request("GET", self.base_url, params=params)
 
-        logger.debug(
-            "OAI request: %s %s", request.method, request.url
-        )
+        logger.debug("OAI request: %s %s", request.method, request.url)
 
         response = self._send_with_retries(request)
 
