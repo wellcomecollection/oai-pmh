@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.0.1](https://github.com/wellcomecollection/oai-pmh/compare/v1.0.0...v1.0.1) (2025-12-01)
+
+
+### Bug Fixes
+
+* ensure consistent datestamp granularity for from/until parameters ([7d872b9](https://github.com/wellcomecollection/oai-pmh/commit/7d872b9fbc55e3ec7eac9959c4097185b5a47e9f))
+* ensure consistent datestamp granularity for from/until parameters ([eee0ae6](https://github.com/wellcomecollection/oai-pmh/commit/eee0ae641c3e9445c0d9c7a043a3428bf81ed533))
+
 ## 1.0.0 (2025-11-19)
 
 
