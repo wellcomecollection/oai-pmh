@@ -1,5 +1,18 @@
 # Changelog
 
+## [1.0.2](https://github.com/wellcomecollection/oai-pmh/compare/v1.0.1...v1.0.2) (2025-12-01)
+
+
+### Bug Fixes
+
+* remove redacted_query_params functionality ([1896145](https://github.com/wellcomecollection/oai-pmh/commit/1896145173429cb740e7cf912f91efd1230ea3b7))
+* remove redacted_query_params functionality ([4d4f0f8](https://github.com/wellcomecollection/oai-pmh/commit/4d4f0f85aa9a68e6cb089c142b594bc88d4e4493))
+
+
+### Documentation
+
+* regenerate documentation ([0b7b117](https://github.com/wellcomecollection/oai-pmh/commit/0b7b11752993213f4770290b9dba360b6dbb94c3))
+
 ## [1.0.1](https://github.com/wellcomecollection/oai-pmh/compare/v1.0.0...v1.0.1) (2025-12-01)
 
 
