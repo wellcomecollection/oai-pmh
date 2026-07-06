@@ -14,6 +14,7 @@ from oai_pmh_client import (
     MetadataFormat,
     Set,
     Record,
+    ResumptionTokenFailedError,
 )
 
 # Using arXiv as the test endpoint for integration tests.
@@ -423,3 +424,201 @@ def test_timezone_aware_midnight_granularity(httpx_mock: HTTPXMock):
     assert request is not None
 
     assert expected_param in str(request.url)
+
+
+# The following tests cover retry behaviour for transient failures
+# (empty response bodies, transport errors, and 5xx responses).
+
+LIST_RECORDS_URL = f"{BASE_URL}?verb=ListRecords&metadataPrefix=oai_dc"
+TOKEN_URL = f"{BASE_URL}?verb=ListRecords&resumptionToken=token123"
+
+
+@pytest.fixture
+def transient_client(httpx_mock: HTTPXMock):
+    """
+    Returns an OAIClient with backoff disabled so retry tests run instantly.
+    """
+    return OAIClient(BASE_URL, request_backoff_factor=0.0)
+
+
+def test_empty_initial_response_is_retried(
+    transient_client: OAIClient, httpx_mock: HTTPXMock
+):
+    """
+    An empty body on an initial request is retried and can then succeed.
+    """
+    httpx_mock.add_response(method="GET", url=LIST_RECORDS_URL, content=b"")
+    httpx_mock.add_response(
+        method="GET",
+        url=LIST_RECORDS_URL,
+        content=load_test_data("list_records_final.xml"),
+    )
+
+    records = list(transient_client.list_records(metadata_prefix="oai_dc"))
+    assert len(records) == 1
+    assert len(httpx_mock.get_requests()) == 2
+
+
+def test_empty_initial_response_retries_exhausted(httpx_mock: HTTPXMock):
+    """
+    A persistently empty body raises once max_transient_retries is exhausted.
+    """
+    from lxml import etree
+
+    client = OAIClient(BASE_URL, request_backoff_factor=0.0, max_transient_retries=2)
+    httpx_mock.add_response(
+        method="GET", url=LIST_RECORDS_URL, content=b"", is_reusable=True
+    )
+
+    with pytest.raises(etree.XMLSyntaxError):
+        list(client.list_records(metadata_prefix="oai_dc"))
+    # One initial attempt plus two retries.
+    assert len(httpx_mock.get_requests()) == 3
+
+
+def test_empty_token_response_raises_immediately(
+    transient_client: OAIClient, httpx_mock: HTTPXMock
+):
+    """
+    An empty body on a resumption token request is never retried: the token
+    was consumed by the failed request, so a distinct exception is raised for
+    callers to restart the list operation.
+    """
+    httpx_mock.add_response(
+        method="GET",
+        url=LIST_RECORDS_URL,
+        content=load_test_data("list_records_resumption.xml"),
+    )
+    httpx_mock.add_response(method="GET", url=TOKEN_URL, content=b"")
+
+    with pytest.raises(ResumptionTokenFailedError):
+        list(transient_client.list_records(metadata_prefix="oai_dc"))
+    assert len(httpx_mock.get_requests(url=TOKEN_URL)) == 1
+
+
+def test_transport_error_on_initial_request_is_retried(
+    transient_client: OAIClient, httpx_mock: HTTPXMock
+):
+    """
+    A transport error on an initial request is retried and can then succeed.
+    """
+    httpx_mock.add_exception(
+        method="GET",
+        url=LIST_RECORDS_URL,
+        exception=httpx.ConnectError("connection refused"),
+    )
+    httpx_mock.add_response(
+        method="GET",
+        url=LIST_RECORDS_URL,
+        content=load_test_data("list_records_final.xml"),
+    )
+
+    records = list(transient_client.list_records(metadata_prefix="oai_dc"))
+    assert len(records) == 1
+    assert len(httpx_mock.get_requests()) == 2
+
+
+def test_transport_error_on_token_request_is_retried_once(
+    transient_client: OAIClient, httpx_mock: HTTPXMock
+):
+    """
+    A transport error on a resumption token request is retried once (the
+    request may never have reached the server), then raises the distinct
+    exception because the token may already be consumed.
+    """
+    httpx_mock.add_response(
+        method="GET",
+        url=LIST_RECORDS_URL,
+        content=load_test_data("list_records_resumption.xml"),
+    )
+    httpx_mock.add_exception(
+        method="GET",
+        url=TOKEN_URL,
+        exception=httpx.ConnectError("connection refused"),
+        is_reusable=True,
+    )
+
+    with pytest.raises(ResumptionTokenFailedError):
+        list(transient_client.list_records(metadata_prefix="oai_dc"))
+    assert len(httpx_mock.get_requests(url=TOKEN_URL)) == 2
+
+
+def test_5xx_on_initial_request_is_retried(
+    transient_client: OAIClient, httpx_mock: HTTPXMock
+):
+    """
+    A 5xx response on an initial request is retried and can then succeed.
+    """
+    httpx_mock.add_response(method="GET", url=LIST_RECORDS_URL, status_code=503)
+    httpx_mock.add_response(
+        method="GET",
+        url=LIST_RECORDS_URL,
+        content=load_test_data("list_records_final.xml"),
+    )
+
+    records = list(transient_client.list_records(metadata_prefix="oai_dc"))
+    assert len(records) == 1
+    assert len(httpx_mock.get_requests()) == 2
+
+
+def test_5xx_on_token_request_is_retried_once(
+    transient_client: OAIClient, httpx_mock: HTTPXMock
+):
+    """
+    A 5xx response on a resumption token request is retried once, then raises
+    the distinct exception because the token may already be consumed.
+    """
+    httpx_mock.add_response(
+        method="GET",
+        url=LIST_RECORDS_URL,
+        content=load_test_data("list_records_resumption.xml"),
+    )
+    httpx_mock.add_response(
+        method="GET", url=TOKEN_URL, status_code=502, is_reusable=True
+    )
+
+    with pytest.raises(ResumptionTokenFailedError):
+        list(transient_client.list_records(metadata_prefix="oai_dc"))
+    assert len(httpx_mock.get_requests(url=TOKEN_URL)) == 2
+
+
+def test_4xx_is_not_retried(transient_client: OAIClient, httpx_mock: HTTPXMock):
+    """
+    A 4xx response is a permanent failure and is never retried.
+    """
+    httpx_mock.add_response(method="GET", url=LIST_RECORDS_URL, status_code=404)
+
+    with pytest.raises(httpx.HTTPStatusError):
+        list(transient_client.list_records(metadata_prefix="oai_dc"))
+    assert len(httpx_mock.get_requests()) == 1
+
+
+def test_oai_protocol_error_is_not_retried(
+    transient_client: OAIClient, httpx_mock: HTTPXMock
+):
+    """
+    An OAI protocol error is a well-formed response and is never retried.
+    """
+    httpx_mock.add_response(
+        method="GET",
+        url=f"{BASE_URL}?verb=ListRecords&metadataPrefix=invalid",
+        content=load_test_data("error_bad_argument.xml"),
+    )
+
+    with pytest.raises(BadArgumentError):
+        list(transient_client.list_records(metadata_prefix="invalid"))
+    assert len(httpx_mock.get_requests()) == 1
+
+
+def test_transient_retries_can_be_disabled(httpx_mock: HTTPXMock):
+    """
+    Setting max_transient_retries=0 disables retries entirely.
+    """
+    from lxml import etree
+
+    client = OAIClient(BASE_URL, max_transient_retries=0)
+    httpx_mock.add_response(method="GET", url=LIST_RECORDS_URL, content=b"")
+
+    with pytest.raises(etree.XMLSyntaxError):
+        list(client.list_records(metadata_prefix="oai_dc"))
+    assert len(httpx_mock.get_requests()) == 1

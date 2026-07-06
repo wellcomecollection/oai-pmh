@@ -144,6 +144,32 @@ except IdDoesNotExistError as e:
     print(f"Caught expected error: {e}")
 ```
 
+#### Retries and transient failures
+
+Some OAI-PMH servers fail intermittently under load, for example by returning
+HTTP 200 with an empty body. The client retries transient failures (empty or
+unparseable response bodies, transport errors, and 5xx responses) with
+exponential backoff, up to `max_transient_retries` times (3 by default; set it
+to 0 to disable). Timeouts are retried separately, controlled by
+`max_request_retries`. 4xx responses and OAI protocol errors are never retried.
+
+Requests that carry a resumption token are handled differently. Many servers
+issue single-use, session-bound tokens that are consumed as soon as the server
+processes a request, so replaying a failed token request cannot succeed. When
+a token request fails, the client raises `ResumptionTokenFailedError` (after
+at most one retry for transport errors and 5xx responses, and immediately for
+empty bodies). Callers can catch it and restart the list operation:
+
+```python
+from oai_pmh_client.exceptions import ResumptionTokenFailedError
+
+try:
+    records = list(client.list_records(metadata_prefix="oai_dc"))
+except ResumptionTokenFailedError:
+    # The resumption token was lost mid-harvest; start again from the top.
+    records = list(client.list_records(metadata_prefix="oai_dc"))
+```
+
 #### Notebook example
 
 See the [`notebooks/arxiv_recent_changes.ipynb`](notebooks/arxiv_recent_changes.ipynb) notebook for an example of using the client to fetch recent changes from the arXiv OAI-PMH endpoint.

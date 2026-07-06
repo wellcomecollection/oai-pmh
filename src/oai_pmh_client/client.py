@@ -16,6 +16,7 @@ from .exceptions import (
     NoRecordsMatchError,
     NoMetadataFormatsError,
     NoSetHierarchyError,
+    ResumptionTokenFailedError,
 )
 from .models import (
     Identify,
@@ -40,6 +41,14 @@ OAI_ERROR_MAP = {
     "noSetHierarchy": NoSetHierarchyError,
 }
 
+# A transport error can occur before a request reaches the server, in which
+# case the resumption token it carries is still valid. It can also occur after
+# the server has processed the request (e.g. the connection dropped
+# mid-response), in which case the token is already consumed on servers that
+# issue single-use tokens. Retrying once covers the first case without
+# repeatedly replaying a token that is most likely burned.
+TOKEN_REQUEST_TRANSIENT_RETRIES = 1
+
 Datestamp = Union[datetime, str]
 DatestampGranularity = Literal["auto", "YYYY-MM-DD", "YYYY-MM-DDThh:mm:ssZ"]
 VALID_GRANULARITIES: set[str] = {"auto", "YYYY-MM-DD", "YYYY-MM-DDThh:mm:ssZ"}
@@ -60,6 +69,7 @@ class OAIClient:
         max_request_retries: int = 3,
         request_backoff_factor: float = 0.5,
         request_max_backoff: float = 5.0,
+        max_transient_retries: int = 3,
     ):
         """
         Initializes the OAIClient.
@@ -73,6 +83,20 @@ class OAIClient:
             "YYYY-MM-DD" (day-level) and "YYYY-MM-DDThh:mm:ssZ" (second-level, UTC).
             Use "auto" (default) to automatically select day-level for midnight
             datetimes and second-level when any time component is present.
+        :param max_request_retries: The maximum number of attempts for a request
+            that fails with an httpx timeout exception.
+        :param request_backoff_factor: The base delay in seconds for exponential
+            backoff between retries.
+        :param request_max_backoff: The maximum delay in seconds between retries.
+        :param max_transient_retries: The number of times to retry a request
+            that fails with an empty or unparseable response body, a transport
+            error, or a 5xx response. Applies in full to initial requests only:
+            requests carrying a resumption token are retried at most once for
+            transport errors and 5xx responses, and never for empty bodies,
+            because many servers issue single-use tokens that are consumed by
+            the failed request (see ResumptionTokenFailedError). Retries use
+            exponential backoff governed by request_backoff_factor and
+            request_max_backoff. Set to 0 to disable these retries.
         """
         self.base_url = base_url
         self._client = client or httpx.Client(timeout=timeout, follow_redirects=True)
@@ -80,6 +104,7 @@ class OAIClient:
         self.max_request_retries = max(1, max_request_retries)
         self.request_backoff_factor = max(0.0, request_backoff_factor)
         self.request_max_backoff = max(0.0, request_max_backoff)
+        self.max_transient_retries = max(0, max_transient_retries)
         if datestamp_granularity not in VALID_GRANULARITIES:
             raise ValueError(
                 "datestamp_granularity must be one of 'auto', 'YYYY-MM-DD', or 'YYYY-MM-DDThh:mm:ssZ'"
@@ -149,10 +174,8 @@ class OAIClient:
 
         logger.debug("OAI request: %s %s", request.method, request.url)
 
-        response = self._send_with_retries(request)
-
-        response.raise_for_status()
-        xml = etree.fromstring(response.content)
+        is_token_request = "resumptionToken" in params
+        xml = self._send_and_parse_with_retries(request, verb, is_token_request)
 
         error = xml.find("oai:error", namespaces=NS)
         if error is not None:
@@ -162,6 +185,98 @@ class OAIClient:
             raise exception_class(message)
 
         return xml
+
+    def _send_and_parse_with_retries(
+        self, request: httpx.Request, verb: str, is_token_request: bool
+    ) -> etree._Element:
+        """
+        Sends a request and parses the response, retrying transient failures.
+
+        Transient failures are empty or unparseable response bodies (some
+        servers, e.g. Axiell Adlib, intermittently return HTTP 200 with an
+        empty body under load), transport errors, and 5xx responses. Initial
+        requests are retried up to ``max_transient_retries`` times with
+        exponential backoff.
+
+        Requests carrying a resumption token are treated differently, because
+        many servers issue single-use, session-bound tokens that are consumed
+        as soon as the server processes a request. An empty body proves the
+        server processed the request, so the token request is not retried at
+        all; a transport error or 5xx response is retried once, since the
+        request may never have reached the server. When a token request
+        fails, ResumptionTokenFailedError is raised so callers can restart
+        the list operation from the beginning.
+
+        4xx responses and OAI protocol errors are never retried.
+        """
+        attempt = 0
+        while True:
+            attempt += 1
+            try:
+                response = self._send_with_retries(request)
+                response.raise_for_status()
+                return etree.fromstring(response.content)
+            except etree.XMLSyntaxError as error:
+                if is_token_request:
+                    raise ResumptionTokenFailedError(
+                        "Received an empty or unparseable response to a "
+                        "resumption token request; the token may have been "
+                        "consumed. Restart the list operation to recover."
+                    ) from error
+                if attempt > self.max_transient_retries:
+                    raise
+                self._backoff_before_retry(verb, error, attempt, is_token_request)
+            except httpx.HTTPStatusError as error:
+                if error.response.status_code < 500:
+                    raise
+                if attempt > self._transient_retry_limit(is_token_request):
+                    if is_token_request:
+                        raise ResumptionTokenFailedError(
+                            "A resumption token request kept failing with a "
+                            "5xx response; the token may have been consumed. "
+                            "Restart the list operation to recover."
+                        ) from error
+                    raise
+                self._backoff_before_retry(verb, error, attempt, is_token_request)
+            except httpx.TransportError as error:
+                # Note: _send_with_retries already retries httpx timeout
+                # exceptions (a TransportError subset) internally, so a
+                # timeout only surfaces here once max_request_retries is
+                # exhausted.
+                if attempt > self._transient_retry_limit(is_token_request):
+                    if is_token_request:
+                        raise ResumptionTokenFailedError(
+                            "A resumption token request kept failing with a "
+                            "transport error; the token may have been "
+                            "consumed. Restart the list operation to recover."
+                        ) from error
+                    raise
+                self._backoff_before_retry(verb, error, attempt, is_token_request)
+
+    def _transient_retry_limit(self, is_token_request: bool) -> int:
+        if is_token_request:
+            return min(TOKEN_REQUEST_TRANSIENT_RETRIES, self.max_transient_retries)
+        return self.max_transient_retries
+
+    def _backoff_before_retry(
+        self, verb: str, error: Exception, attempt: int, is_token_request: bool
+    ) -> None:
+        delay = min(
+            self.request_backoff_factor * (2 ** (attempt - 1)),
+            self.request_max_backoff,
+        )
+        logger.warning(
+            "Transient failure on %s request: %r (retry %s/%s, token request: %s). "
+            "Retrying in %.2fs...",
+            verb,
+            error,
+            attempt,
+            self._transient_retry_limit(is_token_request),
+            is_token_request,
+            delay,
+        )
+        if delay > 0:
+            time.sleep(delay)
 
     def _send_with_retries(self, request: httpx.Request) -> httpx.Response:
         attempt = 0
