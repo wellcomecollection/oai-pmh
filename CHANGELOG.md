@@ -1,5 +1,24 @@
 # Changelog
 
+## [1.1.0](https://github.com/wellcomecollection/oai-pmh/compare/v1.0.2...v1.1.0) (2026-07-06)
+
+
+### Features
+
+* retry transient failures and flag failed resumption token requests ([cb928e0](https://github.com/wellcomecollection/oai-pmh/commit/cb928e0ce9c5f8cfea34c6a05a1a243951bd549e))
+* retry transient failures and flag failed resumption token requests ([3582381](https://github.com/wellcomecollection/oai-pmh/commit/35823817450986a68b4f35ea6836b3863db3eff6))
+
+
+### Bug Fixes
+
+* do not multiply timeout retries with the transient retry ladder ([6f54bbc](https://github.com/wellcomecollection/oai-pmh/commit/6f54bbc9f31426e1b88382656bb6698c20c14fce))
+
+
+### Documentation
+
+* regenerate documentation ([d9d8b8e](https://github.com/wellcomecollection/oai-pmh/commit/d9d8b8ed2a432179d0954289c6b4c9a4a53f18bb))
+* simplify the retries section in the README ([a50679e](https://github.com/wellcomecollection/oai-pmh/commit/a50679e07d0fee0801e467428557ebef908dd5e3))
+
 ## [1.0.2](https://github.com/wellcomecollection/oai-pmh/compare/v1.0.1...v1.0.2) (2025-12-01)
 
 
