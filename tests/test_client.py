@@ -622,3 +622,44 @@ def test_transient_retries_can_be_disabled(httpx_mock: HTTPXMock):
     with pytest.raises(etree.XMLSyntaxError):
         list(client.list_records(metadata_prefix="oai_dc"))
     assert len(httpx_mock.get_requests()) == 1
+
+
+def test_timeout_retries_are_not_multiplied(httpx_mock: HTTPXMock):
+    """
+    Timeouts are retried up to max_request_retries only: the transient retry
+    ladder does not multiply the number of attempts.
+    """
+    client = OAIClient(BASE_URL, max_request_retries=2, request_backoff_factor=0.0)
+    httpx_mock.add_exception(
+        method="GET",
+        url=LIST_RECORDS_URL,
+        exception=httpx.ReadTimeout("timed out"),
+        is_reusable=True,
+    )
+
+    with pytest.raises(httpx.ReadTimeout):
+        list(client.list_records(metadata_prefix="oai_dc"))
+    assert len(httpx_mock.get_requests()) == 2
+
+
+def test_timeout_on_token_request_raises_distinct_exception(httpx_mock: HTTPXMock):
+    """
+    A timeout on a resumption token request is not retried beyond
+    max_request_retries, and raises the distinct exception because the token
+    may already be consumed.
+    """
+    client = OAIClient(BASE_URL, max_request_retries=1, request_backoff_factor=0.0)
+    httpx_mock.add_response(
+        method="GET",
+        url=LIST_RECORDS_URL,
+        content=load_test_data("list_records_resumption.xml"),
+    )
+    httpx_mock.add_exception(
+        method="GET",
+        url=TOKEN_URL,
+        exception=httpx.ReadTimeout("timed out"),
+    )
+
+    with pytest.raises(ResumptionTokenFailedError):
+        list(client.list_records(metadata_prefix="oai_dc"))
+    assert len(httpx_mock.get_requests(url=TOKEN_URL)) == 1

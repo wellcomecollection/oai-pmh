@@ -96,7 +96,8 @@ class OAIClient:
             because many servers issue single-use tokens that are consumed by
             the failed request (see ResumptionTokenFailedError). Retries use
             exponential backoff governed by request_backoff_factor and
-            request_max_backoff. Set to 0 to disable these retries.
+            request_max_backoff. Timeouts are retried separately, governed
+            by max_request_retries only. Set to 0 to disable these retries.
         """
         self.base_url = base_url
         self._client = client or httpx.Client(timeout=timeout, follow_redirects=True)
@@ -207,7 +208,9 @@ class OAIClient:
         fails, ResumptionTokenFailedError is raised so callers can restart
         the list operation from the beginning.
 
-        4xx responses and OAI protocol errors are never retried.
+        Timeouts are retried by _send_with_retries (up to
+        ``max_request_retries``) and are not retried again here. 4xx
+        responses and OAI protocol errors are never retried.
         """
         attempt = 0
         while True:
@@ -232,21 +235,30 @@ class OAIClient:
                 if attempt > self._transient_retry_limit(is_token_request):
                     if is_token_request:
                         raise ResumptionTokenFailedError(
-                            "A resumption token request kept failing with a "
-                            "5xx response; the token may have been consumed. "
+                            "A resumption token request failed with a 5xx "
+                            "response; the token may have been consumed. "
                             "Restart the list operation to recover."
                         ) from error
                     raise
                 self._backoff_before_retry(verb, error, attempt, is_token_request)
+            except httpx.TimeoutException as error:
+                # Timeouts are already retried by _send_with_retries, up to
+                # max_request_retries. Retrying them here as well would
+                # multiply the number of attempts beyond what callers
+                # configured, so a timeout that has exhausted those retries
+                # is not retried again.
+                if is_token_request:
+                    raise ResumptionTokenFailedError(
+                        "A resumption token request failed with a timeout; "
+                        "the token may have been consumed. Restart the list "
+                        "operation to recover."
+                    ) from error
+                raise
             except httpx.TransportError as error:
-                # Note: _send_with_retries already retries httpx timeout
-                # exceptions (a TransportError subset) internally, so a
-                # timeout only surfaces here once max_request_retries is
-                # exhausted.
                 if attempt > self._transient_retry_limit(is_token_request):
                     if is_token_request:
                         raise ResumptionTokenFailedError(
-                            "A resumption token request kept failing with a "
+                            "A resumption token request failed with a "
                             "transport error; the token may have been "
                             "consumed. Restart the list operation to recover."
                         ) from error
