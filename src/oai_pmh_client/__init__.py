@@ -9,6 +9,7 @@ from .exceptions import (
     NoRecordsMatchError,
     NoMetadataFormatsError,
     NoSetHierarchyError,
+    ResumptionTokenFailedError,
 )
 from .models import (
     Identify,
@@ -30,6 +31,7 @@ __all__ = [
     "NoRecordsMatchError",
     "NoMetadataFormatsError",
     "NoSetHierarchyError",
+    "ResumptionTokenFailedError",
     "Identify",
     "Header",
     "MetadataFormat",

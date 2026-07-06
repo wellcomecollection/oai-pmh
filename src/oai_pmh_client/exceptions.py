@@ -50,3 +50,19 @@ class NoSetHierarchyError(OAIError):
     """The repository does not support sets."""
 
     pass
+
+
+class ResumptionTokenFailedError(OAIError):
+    """A request carrying a resumption token failed in a way that may have consumed the token.
+
+    Many OAI-PMH servers issue single-use, session-bound resumption tokens:
+    once the server has processed a request for a token, the token cannot be
+    used again, even if the response was empty or lost in transit. Retrying
+    the same token request therefore cannot succeed. Callers should catch
+    this error and restart the list operation from the beginning.
+
+    This is raised by the client itself, unlike BadResumptionTokenError,
+    which is reported by the server through an OAI-PMH error element.
+    """
+
+    pass
