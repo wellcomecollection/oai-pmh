@@ -1,31 +1,32 @@
 import logging
 import time
-from datetime import datetime, timezone
-from typing import Union, Iterator, Literal, Sequence
+from collections.abc import Iterator, Sequence
+from datetime import UTC, datetime
+from typing import Literal
 
 import httpx
 from lxml import etree
 
 from .exceptions import (
-    OAIError,
     BadArgumentError,
     BadResumptionTokenError,
     BadVerbError,
     CannotDisseminateFormatError,
     IdDoesNotExistError,
-    NoRecordsMatchError,
     NoMetadataFormatsError,
+    NoRecordsMatchError,
     NoSetHierarchyError,
+    OAIError,
     ResumptionTokenFailedError,
 )
 from .models import (
-    Identify,
+    NS,
     Header,
+    Identify,
     MetadataFormat,
-    Set,
     Record,
     ResumptionToken,
-    NS,
+    Set,
 )
 
 logger = logging.getLogger(__name__)
@@ -49,7 +50,7 @@ OAI_ERROR_MAP = {
 # repeatedly replaying a token that is most likely burned.
 TOKEN_REQUEST_TRANSIENT_RETRIES = 1
 
-Datestamp = Union[datetime, str]
+Datestamp = datetime | str
 DatestampGranularity = Literal["auto", "YYYY-MM-DD", "YYYY-MM-DDThh:mm:ssZ"]
 VALID_GRANULARITIES: set[str] = {"auto", "YYYY-MM-DD", "YYYY-MM-DDThh:mm:ssZ"}
 
@@ -128,8 +129,8 @@ class OAIClient:
             if isinstance(dt, datetime):
                 # Ensure we check granularity against UTC time
                 if dt.tzinfo is None:
-                    dt = dt.replace(tzinfo=timezone.utc)
-                dt = dt.astimezone(timezone.utc)
+                    dt = dt.replace(tzinfo=UTC)
+                dt = dt.astimezone(UTC)
 
                 if any((dt.hour, dt.minute, dt.second, dt.microsecond)):
                     return "YYYY-MM-DDThh:mm:ssZ"
@@ -143,9 +144,9 @@ class OAIClient:
             return dt
         if dt.tzinfo is None:
             # If the datetime object is naive, assume it's in UTC.
-            dt = dt.replace(tzinfo=timezone.utc)
+            dt = dt.replace(tzinfo=UTC)
         # If the datetime object is aware, convert it to UTC.
-        dt = dt.astimezone(timezone.utc)
+        dt = dt.astimezone(UTC)
 
         if granularity is None:
             granularity = self._determine_granularity(dt)

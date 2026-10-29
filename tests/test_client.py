@@ -1,20 +1,21 @@
+import contextlib
 import logging
-from datetime import datetime, timezone, timedelta
+from datetime import UTC, datetime, timedelta, timezone
 from pathlib import Path
 
+import httpx
 import pytest
 from pytest_httpx import HTTPXMock
-import httpx
 
 from oai_pmh_client import (
-    OAIClient,
     BadArgumentError,
-    Identify,
     Header,
+    Identify,
     MetadataFormat,
-    Set,
+    OAIClient,
     Record,
     ResumptionTokenFailedError,
+    Set,
 )
 
 # Using arXiv as the test endpoint for integration tests.
@@ -160,7 +161,7 @@ def test_list_records_auto_granularity_with_time(
         url=f"{BASE_URL}?verb=ListRecords&metadataPrefix=oai_dc&from=2024-01-01T12%3A00%3A00Z",
         content=load_test_data("list_records_final.xml"),
     )
-    from_date = datetime(2024, 1, 1, 12, 0, 0)
+    from_date = datetime(2024, 1, 1, 12, 0, 0)  # noqa: DTZ001  naive on purpose: tests naive input
     records = list(
         mock_client_get.list_records(metadata_prefix="oai_dc", from_date=from_date)
     )
@@ -177,7 +178,7 @@ def test_list_records_auto_granularity_midnight(
         url=f"{BASE_URL}?verb=ListRecords&metadataPrefix=oai_dc&from=2024-01-01",
         content=load_test_data("list_records_final.xml"),
     )
-    from_date = datetime(2024, 1, 1, 0, 0, 0)
+    from_date = datetime(2024, 1, 1, 0, 0, 0)  # noqa: DTZ001  naive on purpose: tests naive input
     records = list(
         mock_client_get.list_records(metadata_prefix="oai_dc", from_date=from_date)
     )
@@ -193,7 +194,7 @@ def test_list_records_force_day_granularity(httpx_mock: HTTPXMock):
         url=f"{BASE_URL}?verb=ListRecords&metadataPrefix=oai_dc&from=2024-01-01",
         content=load_test_data("list_records_final.xml"),
     )
-    from_date = datetime(2024, 1, 1, 12, 0, 0)
+    from_date = datetime(2024, 1, 1, 12, 0, 0)  # noqa: DTZ001  naive on purpose: tests naive input
     records = list(client.list_records(metadata_prefix="oai_dc", from_date=from_date))
     assert len(records) == 1
     assert isinstance(records[0], Record)
@@ -207,7 +208,7 @@ def test_list_records_with_datetime_seconds_granularity(httpx_mock: HTTPXMock):
         url=f"{BASE_URL}?verb=ListRecords&metadataPrefix=oai_dc&from=2024-01-01T12%3A00%3A00Z",
         content=load_test_data("list_records_final.xml"),
     )
-    from_date = datetime(2024, 1, 1, 12, 0, 0)
+    from_date = datetime(2024, 1, 1, 12, 0, 0)  # noqa: DTZ001  naive on purpose: tests naive input
     records = list(client.list_records(metadata_prefix="oai_dc", from_date=from_date))
     assert len(records) == 1
     assert isinstance(records[0], Record)
@@ -295,6 +296,7 @@ def test_record_without_header(mock_client_get: OAIClient, httpx_mock: HTTPXMock
     Tests that the client correctly handles records without headers.
     """
     from lxml import etree
+
     from oai_pmh_client.models import Record
 
     # Load and parse the test XML
@@ -359,9 +361,9 @@ def test_mixed_granularity_bug(httpx_mock: HTTPXMock):
     client = OAIClient(BASE_URL)
 
     # from_date is at midnight (00:00:00)
-    from_date = datetime(2024, 1, 1, 0, 0, 0, tzinfo=timezone.utc)
+    from_date = datetime(2024, 1, 1, 0, 0, 0, tzinfo=UTC)
     # until_date has a time component
-    until_date = datetime(2024, 1, 2, 12, 0, 0, tzinfo=timezone.utc)
+    until_date = datetime(2024, 1, 2, 12, 0, 0, tzinfo=UTC)
 
     # We expect the client to use seconds granularity for BOTH because one of them has time.
 
@@ -372,14 +374,13 @@ def test_mixed_granularity_bug(httpx_mock: HTTPXMock):
         content=b"<root></root>",  # Dummy content
     )
 
-    try:
+    # The dummy response does not parse; only the request matters here.
+    with contextlib.suppress(Exception):
         list(
             client.list_records(
                 metadata_prefix="oai_dc", from_date=from_date, until_date=until_date
             )
         )
-    except Exception:
-        pass
 
     # Let's inspect the actual request made
     request = httpx_mock.get_request()
@@ -415,10 +416,9 @@ def test_timezone_aware_midnight_granularity(httpx_mock: HTTPXMock):
         content=b"<root></root>",
     )
 
-    try:
+    # The dummy response does not parse; only the request matters here.
+    with contextlib.suppress(Exception):
         list(client.list_records(metadata_prefix="oai_dc", from_date=from_date))
-    except Exception:
-        pass
 
     request = httpx_mock.get_request()
     assert request is not None

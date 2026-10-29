@@ -68,9 +68,7 @@ from datetime import datetime
 
 # List all records updated since the start of 2024 in the "cs" (Computer Science) set
 records = client.list_records(
-    metadata_prefix="oai_dc",
-    from_date=datetime(2024, 1, 1),
-    set_spec="cs"
+    metadata_prefix="oai_dc", from_date=datetime(2024, 1, 1), set_spec="cs"
 )
 for record in records:
     print(record.header.identifier, record.header.datestamp)
@@ -91,6 +89,7 @@ If you need to override the automatic behaviour—for example to force day-level
 client = OAIClient("https://oaipmh.arxiv.org/oai", datestamp_granularity="YYYY-MM-DD")
 
 from datetime import datetime
+
 records = client.list_records(
     metadata_prefix="oai_dc",
     from_date=datetime(2024, 1, 1, 12, 0, 0),  # still sent as 2024-01-01

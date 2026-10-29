@@ -1,9 +1,10 @@
 from __future__ import annotations
+
 from datetime import datetime
-from typing import Any, Optional, Self
+from typing import Any, Self
 
 from lxml import etree
-from pydantic import BaseModel, Field, field_validator, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 # XML namespaces used in OAI-PMH responses
 NS = {"oai": "http://www.openarchives.org/OAI/2.0/"}
@@ -44,15 +45,15 @@ class ResumptionToken(BaseModel):
     """
 
     value: str = Field(..., description="The resumption token string.")
-    expiration_date: Optional[datetime] = Field(
+    expiration_date: datetime | None = Field(
         None, alias="expirationDate", description="The expiration date of the token."
     )
-    complete_list_size: Optional[int] = Field(
+    complete_list_size: int | None = Field(
         None,
         alias="completeListSize",
         description="The total number of records in the list.",
     )
-    cursor: Optional[int] = Field(None, description="The current position in the list.")
+    cursor: int | None = Field(None, description="The current position in the list.")
 
     @classmethod
     def from_xml(cls, element: etree._Element) -> Self:
@@ -132,7 +133,7 @@ class Set(BaseModel):
 
     spec: str = Field(..., alias="setSpec", description="The set specification.")
     name: str = Field(..., alias="setName", description="The name of the set.")
-    description: Optional[etree._Element] = Field(
+    description: etree._Element | None = Field(
         None,
         alias="setDescription",
         description="Optional description of the set.",
@@ -161,8 +162,8 @@ class Record(BaseModel):
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
-    header: Optional[Header] = Field(None, description="The record header.")
-    metadata: Optional[etree._Element] = Field(
+    header: Header | None = Field(None, description="The record header.")
+    metadata: etree._Element | None = Field(
         None, description="The metadata of the record as an XML element."
     )
 
